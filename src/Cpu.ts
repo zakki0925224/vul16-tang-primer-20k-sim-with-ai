@@ -101,6 +101,7 @@ function shamt5(x: number): number { return x & 0x1f; }
 
 export interface InstructionDecoded {
     opcode: Opcode;
+    format: FormatType,
     rd: number;
     rs1: number;
     rs2: number;
@@ -119,6 +120,7 @@ export class Cpu {
         switch (format) {
             case "R": return {
                 opcode,
+                format,
                 rd: (inst & 0x0700) >> 8,
                 rs1: (inst & 0x00e0) >> 5,
                 rs2: (inst & 0x001c) >> 2,
@@ -126,6 +128,7 @@ export class Cpu {
             }
             case "I": return {
                 opcode,
+                format,
                 rd: (inst & 0x0700) >> 8,
                 rs1: (inst & 0x00e0) >> 5,
                 rs2: 0,
@@ -133,6 +136,7 @@ export class Cpu {
             }
             case "J": return {
                 opcode,
+                format,
                 rd: (inst & 0x0700) >> 8,
                 rs1: 0,
                 rs2: 0,
@@ -140,6 +144,7 @@ export class Cpu {
             }
             case "B": return {
                 opcode,
+                format,
                 rd: 0,
                 rs1: (inst & 0x0700) >> 8,
                 rs2: (inst & 0x00e0) >> 5,
@@ -150,7 +155,6 @@ export class Cpu {
 
     step(inst: number): InstructionDecoded {
         const decoded = this.decode(inst);
-        console.log(decoded);
         const { opcode, rd, rs1, rs2, imm } = decoded;
 
         switch (opcode) {
