@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState, type DragEvent } from "react"
 import { Cpu, type InstructionDecoded } from "./Cpu"
-import Container from '@mui/material/Container'
-import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
-import Paper from '@mui/material/Paper'
-import Grid from '@mui/material/Grid'
-import Typography from '@mui/material/Typography'
-import Slider from '@mui/material/Slider'
-import List from '@mui/material/List'
-import ListItem from '@mui/material/ListItem'
-import ListItemText from '@mui/material/ListItemText'
-import Chip from '@mui/material/Chip'
-import Stack from '@mui/material/Stack'
+import type { BufferInner } from "./TextLcd"
+import Container from "@mui/material/Container"
+import Box from "@mui/material/Box"
+import Button from "@mui/material/Button"
+import Paper from "@mui/material/Paper"
+import Grid from "@mui/material/Grid"
+import Typography from "@mui/material/Typography"
+import Slider from "@mui/material/Slider"
+import List from "@mui/material/List"
+import ListItem from "@mui/material/ListItem"
+import ListItemText from "@mui/material/ListItemText"
+import Chip from "@mui/material/Chip"
+import Stack from "@mui/material/Stack"
 
 function App() {
     const cpuRef = useRef<Cpu | null>(null);
@@ -30,10 +31,15 @@ function App() {
     const [loadedFile, setLoadedFile] = useState<{ name: string; size: number } | null>(null);
     const dumpSize = 65536;
 
+    const [lcdBuf, setLcdBuf] = useState<BufferInner[][] | null>(null);
+
+    const cloneLcdBuffer = (buf: BufferInner[][]) => buf.map(row => row.map(cell => ({ ...cell })));
+
     useEffect(() => {
         cpuRef.current = new Cpu();
         setRegs([...cpuRef.current.gpRegs]);
         setPc(cpuRef.current.pc);
+        setLcdBuf(cloneLcdBuffer(cpuRef.current.textLcd.buffer));
 
         return () => {
             if (intervalRef.current) {
@@ -84,6 +90,7 @@ function App() {
             setRegs(newRegs);
             setPc(cpu.pc);
             setDecoded(d ?? null);
+            setLcdBuf(cpu.textLcd ? cloneLcdBuffer(cpu.textLcd.buffer) : null);
         }, execDelayRef.current) as unknown as number;
 
         return () => {
@@ -118,6 +125,7 @@ function App() {
         setRegs(newRegs);
         setPc(cpu.pc);
         setDecoded(d ?? null);
+        setLcdBuf(cpu.textLcd ? cloneLcdBuffer(cpu.textLcd.buffer) : null);
     }
 
     const start = () => {
@@ -148,6 +156,7 @@ function App() {
             setPc(cpu.pc);
             setDecoded(null);
             setLastInst(null);
+            setLcdBuf(cpu.textLcd ? cloneLcdBuffer(cpu.textLcd.buffer) : null);
             setLoadedFile({ name: f.name, size: arr.length });
         };
         reader.readAsArrayBuffer(f);
@@ -174,11 +183,12 @@ function App() {
         setPc(cpuRef.current.pc);
         setDecoded(null);
         setLastInst(null);
+        setLcdBuf(cpuRef.current.textLcd ? cloneLcdBuffer(cpuRef.current.textLcd.buffer) : null);
         setLoadedFile(null);
     }
 
     return (
-        <Container maxWidth="md" sx={{ mt: 4 }}>
+        <Container maxWidth={false} disableGutters sx={{ mt: 4, width: "100%", px: 2 }}>
             <Paper sx={{ p: 2 }} elevation={3}>
                 <Typography variant="h5" gutterBottom>vul16-tang-primer-20k-sim</Typography>
 
@@ -189,7 +199,7 @@ function App() {
                     <Button variant="outlined" onClick={reset}>Reset</Button>
                     <Box sx={{ mt: 2, width: 300 }}>
                         <Typography variant="caption">Execution delay: {execDelay} ms</Typography>
-                        <Slider value={execDelay} min={10} max={1000} step={10} onChange={(_, v) => setExecDelay(v as number)} aria-label="exec-delay" />
+                        <Slider value={execDelay} min={1} max={1000} step={10} onChange={(_, v) => setExecDelay(v as number)} aria-label="exec-delay" />
                     </Box>
                 </Box>
 
@@ -203,11 +213,23 @@ function App() {
                 </Paper>
 
                 <Grid container spacing={2}>
-                    <Grid size={12}>
-                        <Paper sx={{ p: 2, fontFamily: 'monospace', height: 'auto' }} variant="outlined">
+                    <Grid size={6}>
+                        <Paper sx={{ p: 2, fontFamily: "monospace", height: "auto" }} variant="outlined">
                             <Typography variant="subtitle2">Memory dump</Typography>
                             <Box sx={{ mt: 1 }} />
                             <MemoryDump memory={() => cpuRef.current?.memory} pc={() => cpuRef.current?.pc ?? 0} size={dumpSize} />
+                        </Paper>
+                    </Grid>
+
+                    <Grid size={6}>
+                        <Paper sx={{ p: 2, mt: 1 }} variant="outlined">
+                            <Typography variant="subtitle1">Text LCD</Typography>
+                            <Box sx={{ mt: 1 }} />
+                            {lcdBuf ? (
+                                <TextLcdView buffer={lcdBuf} />
+                            ) : (
+                                <Typography variant="body2">No LCD data</Typography>
+                            )}
                         </Paper>
                     </Grid>
 
@@ -221,8 +243,8 @@ function App() {
                                 {regs.map((v, i) => {
                                     const isChanged = changedRegs.includes(i);
                                     return (
-                                        <ListItem key={i} sx={{ py: 0.5, background: isChanged ? '#fff59d' : 'transparent', borderRadius: 1 }}>
-                                            <ListItemText primary={`r${i}`} secondary={<span style={{ fontFamily: 'monospace' }}>0x{v.toString(16).padStart(4, '0')}</span>} />
+                                        <ListItem key={i} sx={{ py: 0.5, background: isChanged ? "#fff59d" : "transparent", borderRadius: 1 }}>
+                                            <ListItemText primary={`r${i}`} secondary={<span style={{ fontFamily: "monospace" }}>0x{v.toString(16).padStart(4, "0")}</span>} />
                                         </ListItem>
                                     );
                                 })}
@@ -252,6 +274,22 @@ function App() {
             </Paper>
         </Container>
     )
+}
+
+function TextLcdView({ buffer }: { buffer: BufferInner[][] }) {
+    return (
+        <div style={{ fontFamily: "monospace", lineHeight: 1, overflow: "auto", maxHeight: 340 }}>
+            {buffer.map((row, y) => (
+                <div key={y} style={{ display: "flex" }}>
+                    {row.map((cell, x) => (
+                        <div key={x} style={{ width: 10, height: 18, display: "flex", alignItems: "center", justifyContent: "center", background: cell.bg, color: cell.fg }}>
+                            {cell.c || " "}
+                        </div>
+                    ))}
+                </div>
+            ))}
+        </div>
+    );
 }
 
 function MemoryDump({ memory, pc, size }: { memory: () => Uint8Array | undefined, pc: () => number, size: number }) {
@@ -287,21 +325,21 @@ function MemoryDump({ memory, pc, size }: { memory: () => Uint8Array | undefined
             const isPc = absoluteAddr === pcVal || absoluteAddr === ((pcVal + 1) & 0xffff);
             return (
                 <span key={j} style={{
-                    display: 'inline-block',
+                    display: "inline-block",
                     minWidth: 20,
-                    padding: '0 3px',
-                    background: isPc ? '#fff59d' : 'transparent',
-                    color: b == 0 ? '#666' : '#002fffff',
+                    padding: "0 3px",
+                    background: isPc ? "#fff59d" : "transparent",
+                    color: b == 0 ? "#666" : "#002fffff",
                     borderRadius: 3
-                }}>{b.toString(16).padStart(2, '0')}</span>
+                }}>{b.toString(16).padStart(2, "0")}</span>
             );
         });
 
         rows.push(
-            <div key={row} style={{ display: 'grid', gridTemplateColumns: '60px repeat(16, 1fr)', gap: 8, height: rowHeight, alignItems: 'center' }}>
-                <div style={{ color: '#666', paddingLeft: 2 }}>{addr.toString(16).padStart(4, '0')}:</div>
+            <div key={row} style={{ display: "grid", gridTemplateColumns: "60px repeat(16, 1fr)", gap: 8, height: rowHeight, alignItems: "center" }}>
+                <div style={{ color: "#666", paddingLeft: 2 }}>{addr.toString(16).padStart(4, "0")}:</div>
                 {byteElems.map((el, idx) => (
-                    <div key={idx} style={{ textAlign: 'center', fontFamily: 'monospace' }}>{el}</div>
+                    <div key={idx} style={{ textAlign: "center", fontFamily: "monospace" }}>{el}</div>
                 ))}
             </div>
         );
@@ -311,9 +349,9 @@ function MemoryDump({ memory, pc, size }: { memory: () => Uint8Array | undefined
     const translateY = from * rowHeight;
 
     return (
-        <div ref={containerRef} onScroll={onScroll} style={{ height: 300, overflow: 'auto', width: '100%' }}>
-            <div style={{ height: spacerHeight, position: 'relative', width: '100%' }}>
-                <div style={{ position: 'absolute', top: translateY, left: 0, right: 0, width: '100%' }}>{rows}</div>
+        <div ref={containerRef} onScroll={onScroll} style={{ height: 300, overflow: "auto", width: "100%" }}>
+            <div style={{ height: spacerHeight, position: "relative", width: "100%" }}>
+                <div style={{ position: "absolute", top: translateY, left: 0, right: 0, width: "100%" }}>{rows}</div>
             </div>
         </div>
     );
@@ -323,84 +361,82 @@ export default App;
 
 function RenderDecodedTable({ inst, decoded }: { inst: number | null, decoded: InstructionDecoded }) {
     if (inst == null) return <Typography variant="body2">No instruction</Typography>;
-    const bin = inst.toString(2).padStart(16, '0');
+    const bin = inst.toString(2).padStart(16, "0");
 
-    // prefer explicit format if provided by decoder
-    const maybe = decoded as unknown as { format?: 'R' | 'I' | 'J' | 'B' };
-    let fmt: 'R' | 'I' | 'J' | 'B' | null = maybe.format ?? null;
+    const maybe = decoded as unknown as { format?: "R" | "I" | "J" | "B" };
+    let fmt: "R" | "I" | "J" | "B" | null = maybe.format ?? null;
     if (!fmt) {
-        // fallback heuristic: use decoded fields
-        if (decoded.rd !== 0 && decoded.rs1 !== 0 && decoded.rs2 !== 0) fmt = 'R';
-        else if (decoded.rs1 !== 0 && decoded.rd !== 0 && decoded.rs2 === 0) fmt = 'I';
-        else if (decoded.rd !== 0 && decoded.rs1 === 0) fmt = 'J';
-        else fmt = 'B';
+        if (decoded.rd !== 0 && decoded.rs1 !== 0 && decoded.rs2 !== 0) fmt = "R";
+        else if (decoded.rs1 !== 0 && decoded.rd !== 0 && decoded.rs2 === 0) fmt = "I";
+        else if (decoded.rd !== 0 && decoded.rs1 === 0) fmt = "J";
+        else fmt = "B";
     }
-    fmt = fmt as 'R' | 'I' | 'J' | 'B';
+    fmt = fmt as "R" | "I" | "J" | "B";
 
     const cell = (label: string, span?: string) => (
-        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{label}{span ? <div style={{ fontSize: 12, color: '#666' }}>{span}</div> : null}</td>
+        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{label}{span ? <div style={{ fontSize: 12, color: "#666" }}>{span}</div> : null}</td>
     );
 
-    if (fmt === 'R') {
+    if (fmt === "R") {
         // opcode(15-11) rd(10-8) rs1(7-5) rs2(4-2) res(1-0)
         return (
-            <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'monospace' }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "monospace" }}>
                 <tbody>
                     <tr>
-                        {cell('opcode\n15-11')}
-                        {cell('rd\n10-8')}
-                        {cell('rs1\n7-5')}
-                        {cell('rs2\n4-2')}
-                        {cell('reserved\n1-0')}
+                        {cell("opcode\n15-11")}
+                        {cell("rd\n10-8")}
+                        {cell("rs1\n7-5")}
+                        {cell("rs2\n4-2")}
+                        {cell("reserved\n1-0")}
                     </tr>
                     <tr>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(0, 5)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(5, 8)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(8, 11)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(11, 14)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(14, 16)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(0, 5)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(5, 8)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(8, 11)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(11, 14)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(14, 16)}</td>
                     </tr>
                 </tbody>
             </table>
         );
     }
 
-    if (fmt === 'I') {
+    if (fmt === "I") {
         // opcode(15-11) rd(10-8) rs1(7-5) imm(4-0)
         return (
-            <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'monospace' }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "monospace" }}>
                 <tbody>
                     <tr>
-                        {cell('opcode\n15-11')}
-                        {cell('rd\n10-8')}
-                        {cell('rs1\n7-5')}
-                        {cell('imm\n4-0')}
+                        {cell("opcode\n15-11")}
+                        {cell("rd\n10-8")}
+                        {cell("rs1\n7-5")}
+                        {cell("imm\n4-0")}
                     </tr>
                     <tr>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(0, 5)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(5, 8)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(8, 11)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(11, 16)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(0, 5)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(5, 8)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(8, 11)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(11, 16)}</td>
                     </tr>
                 </tbody>
             </table>
         );
     }
 
-    if (fmt === 'J') {
+    if (fmt === "J") {
         // opcode(15-11) rd(10-8) offset(7-0)
         return (
-            <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'monospace' }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "monospace" }}>
                 <tbody>
                     <tr>
-                        {cell('opcode\n15-11')}
-                        {cell('rd\n10-8')}
-                        {cell('offset\n7-0')}
+                        {cell("opcode\n15-11")}
+                        {cell("rd\n10-8")}
+                        {cell("offset\n7-0")}
                     </tr>
                     <tr>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(0, 5)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(5, 8)}</td>
-                        <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(8, 16)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(0, 5)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(5, 8)}</td>
+                        <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(8, 16)}</td>
                     </tr>
                 </tbody>
             </table>
@@ -409,19 +445,19 @@ function RenderDecodedTable({ inst, decoded }: { inst: number | null, decoded: I
 
     // B
     return (
-        <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'monospace' }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "monospace" }}>
             <tbody>
                 <tr>
-                    {cell('opcode\n15-11')}
-                    {cell('rs1\n10-8')}
-                    {cell('rs2\n7-5')}
-                    {cell('offset\n4-0')}
+                    {cell("opcode\n15-11")}
+                    {cell("rs1\n10-8")}
+                    {cell("rs2\n7-5")}
+                    {cell("offset\n4-0")}
                 </tr>
                 <tr>
-                    <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(0, 5)}</td>
-                    <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(5, 8)}</td>
-                    <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(8, 11)}</td>
-                    <td style={{ border: '1px solid #444', padding: 6, textAlign: 'center' }}>{bin.slice(11, 16)}</td>
+                    <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(0, 5)}</td>
+                    <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(5, 8)}</td>
+                    <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(8, 11)}</td>
+                    <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{bin.slice(11, 16)}</td>
                 </tr>
             </tbody>
         </table>

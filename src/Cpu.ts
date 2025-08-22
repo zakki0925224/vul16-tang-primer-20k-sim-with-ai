@@ -1,3 +1,5 @@
+import { LCD_TEXT_HEIGHT, LCD_TEXT_WIDTH, TextLcd } from "./TextLcd";
+
 type Opcode =
     | "Add" | "Addi" | "Sub" | "And" | "Andi" | "Or" | "Ori" | "Xor" | "Xori" | "Sll" | "Slli" | "Srl" | "Srli" | "Sra" | "Srai" | "Slt" | "Slti" | "Sltu" | "Sltiu" | "Lb" | "Lbu" | "Lw" | "Sb" | "Sw" | "Jmp" | "Jmpr" | "Beq" | "Bne" | "Blt" | "Bge" | "Bltu" | "Bgeu";
 
@@ -8,6 +10,8 @@ const WORD_LEN = 16;
 const BYTE_LEN = 8;
 const NUM_GP_REGS = 8;
 const START_ADDR = 0;
+const MMIO_LCD_START_ADDR = 0xf004;
+const MMIO_LCD_LEN = LCD_TEXT_WIDTH * LCD_TEXT_HEIGHT * 2;
 
 function opcodeFromInst(inst: number): Opcode {
     const op = (inst & 0xf800) >> 11;
@@ -112,6 +116,7 @@ export class Cpu {
     gpRegs: number[] = Array(NUM_GP_REGS).fill(0);
     pc: number = START_ADDR;
     memory: Uint8Array = new Uint8Array(65536);
+    textLcd: TextLcd = new TextLcd();
 
     decode(inst: number): InstructionDecoded {
         const opcode = opcodeFromInst(inst);
@@ -310,7 +315,9 @@ export class Cpu {
             }
             case "Sb": {
                 const addr = (toU16(this.gpRegs[rs1]) + toS16(imm)) & 0xffff;
-                this.memory[addr] = this.gpRegs[rd] & 0xff;
+                const data = this.gpRegs[rd] & 0xff;
+                this.memory[addr] = data;
+                this.writeLcd(addr, data);
                 this.pc += WORD_LEN / BYTE_LEN;
                 break;
             }
@@ -320,6 +327,8 @@ export class Cpu {
                 const high = (this.gpRegs[rd] >> BYTE_LEN) & 0xff;
                 this.memory[addr] = low;
                 this.memory[(addr + 1) & 0xffff] = high;
+                this.writeLcd(addr, low);
+                this.writeLcd((addr + 1) & 0xffff, high);
                 this.pc += WORD_LEN / BYTE_LEN;
                 break;
             }
@@ -405,5 +414,29 @@ export class Cpu {
         this.pc &= 0xffff;
 
         return decoded;
+    }
+
+    writeLcd(addr: number, data: number): void {
+        if (addr >= MMIO_LCD_START_ADDR && addr < MMIO_LCD_START_ADDR + MMIO_LCD_LEN) {
+            const rel = (addr - MMIO_LCD_START_ADDR) & 0xffff;
+            const offset = Math.floor(rel / 2);
+            const isWriteAscii = (rel % 2) === 0;
+            const x = offset % LCD_TEXT_WIDTH;
+            const y = Math.floor(offset / LCD_TEXT_WIDTH);
+
+            // ignore out-of-range coordinates
+            if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x >= LCD_TEXT_WIDTH || y < 0 || y >= LCD_TEXT_HEIGHT) {
+                return;
+            }
+
+            if (isWriteAscii) {
+                // use only lower 8 bits as ASCII
+                this.textLcd.setAscii(x, y, String.fromCharCode(data & 0xff));
+            } else {
+                const bg = (data >> 4) & 0x0f;
+                const fg = data & 0x0f;
+                this.textLcd.setFgBg(x, y, fg, bg);
+            }
+        }
     }
 }
