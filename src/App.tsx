@@ -1,18 +1,7 @@
-import { useEffect, useRef, useState, type DragEvent } from "react"
-import { Cpu, type InstructionDecoded } from "./Cpu"
-import type { BufferInner } from "./TextLcd"
-import Container from "@mui/material/Container"
-import Box from "@mui/material/Box"
-import Button from "@mui/material/Button"
-import Paper from "@mui/material/Paper"
-import Grid from "@mui/material/Grid"
-import Typography from "@mui/material/Typography"
-import Slider from "@mui/material/Slider"
-import List from "@mui/material/List"
-import ListItem from "@mui/material/ListItem"
-import ListItemText from "@mui/material/ListItemText"
-import Chip from "@mui/material/Chip"
-import Stack from "@mui/material/Stack"
+import { Box, Button, Chip, Container, FormControlLabel, FormGroup, Grid, Paper, Slider, Stack, Switch, Typography } from "@mui/material";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { Cpu, type InstructionDecoded } from "./Cpu";
+import type { BufferInner } from "./TextLcd";
 
 function App() {
     const cpuRef = useRef<Cpu | null>(null);
@@ -29,9 +18,22 @@ function App() {
     const [decoded, setDecoded] = useState<InstructionDecoded | null>(null);
     const [lastInst, setLastInst] = useState<number | null>(null);
     const [loadedFile, setLoadedFile] = useState<{ name: string; size: number } | null>(null);
+    const [dragActive, setDragActive] = useState(false);
+    const dragCounterRef = useRef(0);
     const dumpSize = 65536;
 
     const [lcdBuf, setLcdBuf] = useState<BufferInner[][] | null>(null);
+
+    // button states (4 buttons). bit0 = button1 ... bit3 = button4
+    const [buttons, setButtons] = useState<boolean[]>([false, false, false, false]);
+    const buttonsRef = useRef<boolean[]>(buttons);
+
+    const buttonsToByte = (bs: boolean[]) => {
+        const b = bs.reduce((acc, b, i) => acc | (b ? (1 << i) : 0), 0) & 0x0f;
+        return b;
+    }
+
+    useEffect(() => { buttonsRef.current = buttons; }, [buttons]);
 
     const cloneLcdBuffer = (buf: BufferInner[][]) => buf.map(row => row.map(cell => ({ ...cell })));
 
@@ -138,8 +140,25 @@ function App() {
         e.preventDefault();
     }
 
+    const handleDragEnter = (e: DragEvent) => {
+        e.preventDefault();
+        dragCounterRef.current += 1;
+        setDragActive(true);
+    }
+
+    const handleDragLeave = (e: DragEvent) => {
+        e.preventDefault();
+        dragCounterRef.current -= 1;
+        if (dragCounterRef.current <= 0) {
+            dragCounterRef.current = 0;
+            setDragActive(false);
+        }
+    }
+
     const handleDrop = (e: DragEvent) => {
         e.preventDefault();
+        dragCounterRef.current = 0;
+        setDragActive(false);
         const files = e.dataTransfer?.files;
         if (!files || files.length === 0) return;
         const f = files[0];
@@ -151,6 +170,7 @@ function App() {
             if (!cpu) return;
             cpu.memory.fill(0);
             cpu.memory.set(arr, 0);
+            cpu.memory[0xf002] = buttonsToByte(buttonsRef.current);
             cpu.pc = 0;
             setRegs([...cpu.gpRegs]);
             setPc(cpu.pc);
@@ -178,6 +198,9 @@ function App() {
         setRunning(false);
 
         cpuRef.current = new Cpu();
+        if (cpuRef.current) {
+            cpuRef.current.memory[0xf002] = buttonsToByte(buttonsRef.current);
+        }
         setRegs([...cpuRef.current.gpRegs]);
         setChangedRegs([]);
         setPc(cpuRef.current.pc);
@@ -203,7 +226,21 @@ function App() {
                     </Box>
                 </Box>
 
-                <Paper variant="outlined" sx={{ p: 2, mb: 2 }} onDragOver={handleDragOver} onDrop={handleDrop}>
+                <Paper
+                    variant="outlined"
+                    sx={{
+                        p: 2,
+                        mb: 2,
+                        borderStyle: "dashed",
+                        borderWidth: 2,
+                        transition: "background-color 120ms, border-color 120ms",
+                        ...(dragActive ? { backgroundColor: "rgba(255,245,157,0.4)", borderColor: "#fdd835" } : { borderColor: "#bbb" })
+                    }}
+                    onDragOver={handleDragOver}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
                     <Stack direction="row" spacing={2} alignItems="center">
                         <Typography variant="body2">Drag & drop a binary here to load to memory</Typography>
                         {loadedFile && (
@@ -215,44 +252,33 @@ function App() {
                 <Grid container spacing={2}>
                     <Grid size={6}>
                         <Paper sx={{ p: 2, fontFamily: "monospace", height: "auto" }} variant="outlined">
-                            <Typography variant="subtitle2">Memory dump</Typography>
+                            <Typography variant="subtitle1">Memory dump</Typography>
                             <Box sx={{ mt: 1 }} />
                             <MemoryDump memory={() => cpuRef.current?.memory} pc={() => cpuRef.current?.pc ?? 0} size={dumpSize} />
                         </Paper>
                     </Grid>
 
-                    <Grid size={6}>
-                        <Paper sx={{ p: 2, mt: 1 }} variant="outlined">
-                            <Typography variant="subtitle1">Text LCD</Typography>
-                            <Box sx={{ mt: 1 }} />
-                            {lcdBuf ? (
-                                <TextLcdView buffer={lcdBuf} />
-                            ) : (
-                                <Typography variant="body2">No LCD data</Typography>
-                            )}
-                        </Paper>
-                    </Grid>
-
-                    <Grid size={6}>
+                    <Grid size={3}>
                         <Paper sx={{ p: 2 }} variant="outlined">
                             <Typography variant="subtitle1">PC</Typography>
                             <Typography variant="body2">0x{pc.toString(16).padStart(4, "0")}</Typography>
                             <Box sx={{ mt: 1 }} />
                             <Typography variant="subtitle1">Registers</Typography>
-                            <List dense disablePadding>
+                            <Box sx={{ mt: 1, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 1 }}>
                                 {regs.map((v, i) => {
                                     const isChanged = changedRegs.includes(i);
                                     return (
-                                        <ListItem key={i} sx={{ py: 0.5, background: isChanged ? "#fff59d" : "transparent", borderRadius: 1 }}>
-                                            <ListItemText primary={`r${i}`} secondary={<span style={{ fontFamily: "monospace" }}>0x{v.toString(16).padStart(4, "0")}</span>} />
-                                        </ListItem>
+                                        <Box key={i} sx={{ p: 1, background: isChanged ? "#fff59d" : "transparent", borderRadius: 1, display: "flex", flexDirection: "column" }}>
+                                            <Typography>r{i}</Typography>
+                                            <div style={{ fontFamily: "monospace" }}>0x{v.toString(16).padStart(4, "0")}</div>
+                                        </Box>
                                     );
                                 })}
-                            </List>
+                            </Box>
                         </Paper>
                     </Grid>
 
-                    <Grid size={6}>
+                    <Grid size={3}>
                         <Paper sx={{ p: 2 }} variant="outlined">
                             <Typography variant="subtitle1">Last decoded</Typography>
                             {decoded ? (
@@ -267,6 +293,87 @@ function App() {
                                 </div>
                             ) : (
                                 <Typography variant="body2">—</Typography>
+                            )}
+                        </Paper>
+                    </Grid>
+
+                    <Grid size={2}>
+                        <Paper sx={{ p: 2, mt: 1 }} variant="outlined">
+                            <Typography variant="subtitle1">LED simulation (MMIO 0xf000)</Typography>
+                        </Paper>
+                    </Grid>
+
+                    <Grid size={4}>
+                        <Paper sx={{ p: 2, mt: 1 }} variant="outlined">
+                            <Typography variant="subtitle1">UART simulation (MMIO 0xf001)</Typography>
+                        </Paper>
+                    </Grid>
+
+                    <Grid size={2}>
+                        <Paper sx={{ p: 2, mt: 1 }} variant="outlined">
+                            <Typography variant="subtitle1">Button simulation (MMIO 0xf002)</Typography>
+                            <FormGroup>
+                                <FormControlLabel control={<Switch checked={buttons[0]} onChange={(_, checked) => {
+                                    setButtons(prev => {
+                                        const n = [...prev]; n[0] = checked;
+                                        // update ref and MMIO immediately to avoid timing issues
+                                        buttonsRef.current = n;
+                                        const cpu = cpuRef.current;
+                                        if (cpu) {
+                                            const v = buttonsToByte(n);
+                                            cpu.memory[0xf002] = v;
+                                        }
+                                        return n;
+                                    });
+                                }} />} label="Button 1" />
+                                <FormControlLabel control={<Switch checked={buttons[1]} onChange={(_, checked) => {
+                                    setButtons(prev => {
+                                        const n = [...prev]; n[1] = checked;
+                                        buttonsRef.current = n;
+                                        const cpu = cpuRef.current;
+                                        if (cpu) {
+                                            const v = buttonsToByte(n);
+                                            cpu.memory[0xf002] = v;
+                                        }
+                                        return n;
+                                    });
+                                }} />} label="Button 2" />
+                                <FormControlLabel control={<Switch checked={buttons[2]} onChange={(_, checked) => {
+                                    setButtons(prev => {
+                                        const n = [...prev]; n[2] = checked;
+                                        buttonsRef.current = n;
+                                        const cpu = cpuRef.current;
+                                        if (cpu) {
+                                            const v = buttonsToByte(n);
+                                            cpu.memory[0xf002] = v;
+                                        }
+                                        return n;
+                                    });
+                                }} />} label="Button 3" />
+                                <FormControlLabel control={<Switch checked={buttons[3]} onChange={(_, checked) => {
+                                    setButtons(prev => {
+                                        const n = [...prev]; n[3] = checked;
+                                        buttonsRef.current = n;
+                                        const cpu = cpuRef.current;
+                                        if (cpu) {
+                                            const v = buttonsToByte(n);
+                                            cpu.memory[0xf002] = v;
+                                        }
+                                        return n;
+                                    });
+                                }} />} label="Button 4" />
+                            </FormGroup>
+                        </Paper>
+                    </Grid>
+
+                    <Grid size={4}>
+                        <Paper sx={{ p: 2, mt: 1 }} variant="outlined">
+                            <Typography variant="subtitle1">LCD simulation (MMIO 0xf004)</Typography>
+                            <Box sx={{ mt: 1 }} />
+                            {lcdBuf ? (
+                                <TextLcdView buffer={lcdBuf} />
+                            ) : (
+                                <Typography variant="body2">No LCD data</Typography>
                             )}
                         </Paper>
                     </Grid>
