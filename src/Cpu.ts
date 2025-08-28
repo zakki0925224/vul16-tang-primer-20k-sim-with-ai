@@ -137,7 +137,21 @@ export class Cpu {
                 rd: (inst & 0x0700) >> 8,
                 rs1: (inst & 0x00e0) >> 5,
                 rs2: 0,
-                imm: signExtend((inst & 0x001f), 5, WORD_LEN)
+                imm: (() => {
+                    const raw5 = (inst & 0x001f);
+                    switch (opcode) {
+                        case "Andi":
+                        case "Ori":
+                        case "Xori":
+                        case "Sltiu":
+                        case "Slli":
+                        case "Srli":
+                        case "Srai":
+                            return raw5;
+                        default:
+                            return signExtend(raw5, 5, WORD_LEN);
+                    }
+                })()
             }
             case "J": return {
                 opcode,
