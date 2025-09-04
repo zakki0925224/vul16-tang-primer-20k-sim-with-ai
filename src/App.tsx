@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Cpu, type InstructionDecoded } from "./Cpu";
 import type { BufferInner } from "./TextLcd";
 
-function App() {
+export default function App() {
     const cpuRef = useRef<Cpu | null>(null);
     const intervalRef = useRef<number | null>(null);
     const changedTimerRef = useRef<number | null>(null);
@@ -222,7 +222,7 @@ function App() {
                     <Button variant="outlined" onClick={reset}>Reset</Button>
                     <Box sx={{ mt: 2, width: 300 }}>
                         <Typography variant="caption">Execution delay: {execDelay} ms</Typography>
-                        <Slider value={execDelay} min={1} max={1000} step={10} onChange={(_, v) => setExecDelay(v as number)} aria-label="exec-delay" />
+                        <Slider value={execDelay} min={1} max={1000} step={10} onChange={(_, v) => setExecDelay(v)} aria-label="exec-delay" />
                     </Box>
                 </Box>
 
@@ -383,7 +383,7 @@ function App() {
     )
 }
 
-function TextLcdView({ buffer }: { buffer: BufferInner[][] }) {
+function TextLcdView({ buffer }: Readonly<{ buffer: BufferInner[][] }>) {
     return (
         <div style={{ fontFamily: "monospace", lineHeight: 1, overflow: "auto", maxHeight: 340 }}>
             {buffer.map((row, y) => (
@@ -399,7 +399,7 @@ function TextLcdView({ buffer }: { buffer: BufferInner[][] }) {
     );
 }
 
-function MemoryDump({ memory, pc, size }: { memory: () => Uint8Array | undefined, pc: () => number, size: number }) {
+function MemoryDump({ memory, pc, size }: Readonly<{ memory: () => Uint8Array | undefined, pc: () => number, size: number }>) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const [scrollTop, setScrollTop] = useState(0);
 
@@ -445,8 +445,8 @@ function MemoryDump({ memory, pc, size }: { memory: () => Uint8Array | undefined
         rows.push(
             <div key={row} style={{ display: "grid", gridTemplateColumns: "60px repeat(16, 1fr)", gap: 8, height: rowHeight, alignItems: "center" }}>
                 <div style={{ color: "#666", paddingLeft: 2 }}>{addr.toString(16).padStart(4, "0")}:</div>
-                {byteElems.map((el, idx) => (
-                    <div key={idx} style={{ textAlign: "center", fontFamily: "monospace" }}>{el}</div>
+                {byteElems.map((el, i) => (
+                    <div key={i} style={{ textAlign: "center", fontFamily: "monospace" }}>{el}</div>
                 ))}
             </div>
         );
@@ -464,9 +464,7 @@ function MemoryDump({ memory, pc, size }: { memory: () => Uint8Array | undefined
     );
 }
 
-export default App;
-
-function RenderDecodedTable({ inst, decoded }: { inst: number | null, decoded: InstructionDecoded }) {
+function RenderDecodedTable({ inst, decoded }: Readonly<{ inst: number | null, decoded: InstructionDecoded }>) {
     if (inst == null) return <Typography variant="body2">No instruction</Typography>;
     const bin = inst.toString(2).padStart(16, "0");
 
@@ -478,7 +476,6 @@ function RenderDecodedTable({ inst, decoded }: { inst: number | null, decoded: I
         else if (decoded.rd !== 0 && decoded.rs1 === 0) fmt = "J";
         else fmt = "B";
     }
-    fmt = fmt as "R" | "I" | "J" | "B";
 
     const cell = (label: string, span?: string) => (
         <td style={{ border: "1px solid #444", padding: 6, textAlign: "center" }}>{label}{span ? <div style={{ fontSize: 12, color: "#666" }}>{span}</div> : null}</td>
