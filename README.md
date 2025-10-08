@@ -1,4 +1,4 @@
-# vul16-tang-primer-20k-sim
+# vul16-tang-primer-20k-sim-with-ai
 
 ```bash
 $ npm install

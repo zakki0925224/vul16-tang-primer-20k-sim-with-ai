@@ -1,4 +1,4 @@
-import { LCD_TEXT_HEIGHT, LCD_TEXT_WIDTH, TextLcd } from "./TextLcd";
+import { LCD_TEXT_HEIGHT, LCD_TEXT_WIDTH, TextLcd } from "./textLcd";
 
 type Opcode =
     | "Add" | "Addi" | "Sub" | "And" | "Andi" | "Or" | "Ori" | "Xor" | "Xori" | "Sll" | "Slli" | "Srl" | "Srli" | "Sra" | "Srai" | "Slt" | "Slti" | "Sltu" | "Sltiu" | "Lb" | "Lbu" | "Lw" | "Sb" | "Sw" | "Jmp" | "Jmpr" | "Beq" | "Bne" | "Blt" | "Bge" | "Bltu" | "Bgeu";
