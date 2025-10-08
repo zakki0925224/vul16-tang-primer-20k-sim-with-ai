@@ -1,10 +1,14 @@
 import { Box, Button, Chip, Container, FormControlLabel, FormGroup, Grid, Paper, Slider, Stack, Switch, Typography } from "@mui/material";
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type RefObject } from "react";
 import { Cpu, type InstructionDecoded } from "./cpu";
 import type { BufferInner } from "./textLcd";
 
-export function Simulator() {
-    const cpuRef = useRef<Cpu | null>(null);
+interface SimulatorProps {
+    cpuRef: RefObject<Cpu | null>;
+    onRunningChange?: (isRunning: boolean) => void;
+}
+
+export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>) {
     const intervalRef = useRef<number | null>(null);
     const changedTimerRef = useRef<number | null>(null);
     const [running, setRunning] = useState(false);
@@ -129,26 +133,34 @@ export function Simulator() {
         }
         setRunning(false);
 
-        cpuRef.current = new Cpu();
         if (cpuRef.current) {
+            cpuRef.current.gpRegs = Array(8).fill(0);
+            cpuRef.current.pc = 0;
+            cpuRef.current.memory.fill(0);
             cpuRef.current.memory[0xf002] = buttonsToByte(buttonsRef.current);
+            setRegs([...cpuRef.current.gpRegs]);
+            setChangedRegs([]);
+            setPc(cpuRef.current.pc);
+            setDecoded(null);
+            setLastInst(null);
+            setLcdBuf(cpuRef.current.textLcd ? cloneLcdBuffer(cpuRef.current.textLcd.buffer) : null);
         }
-        setRegs([...cpuRef.current.gpRegs]);
-        setChangedRegs([]);
-        setPc(cpuRef.current.pc);
-        setDecoded(null);
-        setLastInst(null);
-        setLcdBuf(cpuRef.current.textLcd ? cloneLcdBuffer(cpuRef.current.textLcd.buffer) : null);
         setLoadedFile(null);
     }
 
     useEffect(() => { buttonsRef.current = buttons; }, [buttons]);
 
     useEffect(() => {
-        cpuRef.current = new Cpu();
-        setRegs([...cpuRef.current.gpRegs]);
-        setPc(cpuRef.current.pc);
-        setLcdBuf(cloneLcdBuffer(cpuRef.current.textLcd.buffer));
+        onRunningChange?.(running);
+    }, [running, onRunningChange]);
+
+    useEffect(() => {
+        const cpu = cpuRef.current;
+        if (cpu) {
+            setRegs([...cpu.gpRegs]);
+            setPc(cpu.pc);
+            setLcdBuf(cloneLcdBuffer(cpu.textLcd.buffer));
+        }
 
         return () => {
             if (intervalRef.current) {
@@ -156,7 +168,7 @@ export function Simulator() {
             }
             intervalRef.current = null;
         }
-    }, []);
+    }, [cpuRef]);
 
     // keep refs in sync with state
     useEffect(() => { runningRef.current = running; }, [running]);
@@ -208,7 +220,7 @@ export function Simulator() {
                 intervalRef.current = null;
             }
         }
-    }, [running, execDelay]);
+    }, [running, execDelay, cpuRef]);
 
     return (
         <Container maxWidth={false} disableGutters sx={{ mt: 4, width: "100%", px: 2 }}>

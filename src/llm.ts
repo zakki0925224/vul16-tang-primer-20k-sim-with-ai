@@ -10,8 +10,7 @@ const googleProvider = createGoogleGenerativeAI({
 });
 
 const localProvider = createOpenAICompatible({
-    name: "local",
-    apiKey: import.meta.env.VITE_LOCAL_API_KEY,
+    name: "lmstudio",
     baseURL: import.meta.env.VITE_LOCAL_BASE_URL,
 });
 
