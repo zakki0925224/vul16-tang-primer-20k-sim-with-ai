@@ -107,6 +107,7 @@ export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>)
             cpu.memory.fill(0);
             cpu.memory.set(arr, 0);
             cpu.memory[0xf002] = buttonsToByte(buttonsRef.current);
+            cpu.clearHistory();
             cpu.pc = 0;
             setRegs([...cpu.gpRegs]);
             setPc(cpu.pc);
@@ -138,6 +139,7 @@ export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>)
             cpuRef.current.pc = 0;
             cpuRef.current.memory.fill(0);
             cpuRef.current.memory[0xf002] = buttonsToByte(buttonsRef.current);
+            cpuRef.current.clearHistory();
             setRegs([...cpuRef.current.gpRegs]);
             setChangedRegs([]);
             setPc(cpuRef.current.pc);

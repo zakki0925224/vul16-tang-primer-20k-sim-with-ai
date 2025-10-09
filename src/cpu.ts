@@ -5,13 +5,14 @@ type Opcode =
 
 type FormatType = "R" | "I" | "J" | "B";
 
-
 const WORD_LEN = 16;
 const BYTE_LEN = 8;
 const NUM_GP_REGS = 8;
 const START_ADDR = 0;
 const MMIO_LCD_START_ADDR = 0xf004;
 const MMIO_LCD_LEN = LCD_TEXT_WIDTH * LCD_TEXT_HEIGHT * 2;
+
+export const CPU_MAX_HISTORY = 30;
 
 function opcodeFromInst(inst: number): Opcode {
     const op = (inst & 0xf800) >> 11;
@@ -103,6 +104,26 @@ function toS16(x: number): number { return (x << 16) >> 16; }
 function toU16(x: number): number { return x & 0xffff; }
 function shamt5(x: number): number { return x & 0x1f; }
 
+export interface CpuStateDiff {
+    pc: number;
+    inst: number;
+    decoded: InstructionDecoded;
+    changedRegs: Map<number, { before: number; after: number }>;
+    memoryWrites: Array<{ addr: number; before: number; after: number }>;
+    repeatCount?: number;
+    loopId?: number;
+    isLoopStart?: boolean;
+    isLoopEnd?: boolean;
+}
+
+interface LoopPattern {
+    startPc: number;
+    endPc: number;
+    instructions: number[];
+    repeatCount: number;
+    firstDiffIndex: number;
+}
+
 export interface InstructionDecoded {
     opcode: Opcode;
     format: FormatType,
@@ -114,9 +135,20 @@ export interface InstructionDecoded {
 
 export class Cpu {
     gpRegs: number[] = Array(NUM_GP_REGS).fill(0);
-    pc: number = START_ADDR;
+    private prevGpRegs: number[] = Array(NUM_GP_REGS).fill(0);
+
     memory: Uint8Array = new Uint8Array(65536);
+    private memoryWrites: Array<{ addr: number; before: number; after: number }> = [];
+
+    pc: number = START_ADDR;
     textLcd: TextLcd = new TextLcd();
+
+    history: CpuStateDiff[] = [];
+    private executionTrace: number[] = [];
+    private readonly maxTraceLength: number = 1000;
+    private readonly detectedLoops: Map<number, LoopPattern> = new Map();
+    private currentLoopId: number = 0;
+    private lastCompressedLoopId: number = -1;
 
     decode(inst: number): InstructionDecoded {
         const opcode = opcodeFromInst(inst);
@@ -173,6 +205,15 @@ export class Cpu {
     }
 
     step(inst: number): InstructionDecoded {
+        const prevPc = this.pc;
+        this.prevGpRegs = [...this.gpRegs];
+        this.memoryWrites = [];
+
+        this.executionTrace.push(prevPc);
+        if (this.executionTrace.length > this.maxTraceLength) {
+            this.executionTrace.shift();
+        }
+
         const decoded = this.decode(inst);
         const { opcode, rd, rs1, rs2, imm } = decoded;
 
@@ -330,6 +371,7 @@ export class Cpu {
             case "Sb": {
                 const addr = (toU16(this.gpRegs[rs1]) + toS16(imm)) & 0xffff;
                 const data = this.gpRegs[rd] & 0xff;
+                this.memoryWrites.push({ addr, before: this.memory[addr], after: data });
                 this.memory[addr] = data;
                 this.writeLcd(addr, data);
                 this.pc += WORD_LEN / BYTE_LEN;
@@ -339,7 +381,10 @@ export class Cpu {
                 const addr = (toU16(this.gpRegs[rs1]) + toS16(imm)) & 0xffff;
                 const low = this.gpRegs[rd] & 0xff;
                 const high = (this.gpRegs[rd] >> BYTE_LEN) & 0xff;
+
+                this.memoryWrites.push({ addr, before: this.memory[addr], after: low });
                 this.memory[addr] = low;
+                this.memoryWrites.push({ addr: (addr + 1) & 0xffff, before: this.memory[(addr + 1) & 0xffff], after: high });
                 this.memory[(addr + 1) & 0xffff] = high;
                 this.writeLcd(addr, low);
                 this.writeLcd((addr + 1) & 0xffff, high);
@@ -427,6 +472,12 @@ export class Cpu {
         this.gpRegs[0] = 0;
         this.pc &= 0xffff;
 
+        this.recordDiff(prevPc, inst, decoded);
+
+        if (this.pc <= prevPc) {
+            this.detectLoop();
+        }
+
         return decoded;
     }
 
@@ -452,5 +503,268 @@ export class Cpu {
                 this.textLcd.setFgBg(x, y, fg, bg);
             }
         }
+    }
+
+    private recordDiff(prevPc: number, inst: number, decoded: InstructionDecoded) {
+        const changedRegs = new Map<number, { before: number; after: number }>();
+        for (let i = 0; i < NUM_GP_REGS; i++) {
+            if (this.gpRegs[i] !== this.prevGpRegs[i]) {
+                changedRegs.set(i, { before: this.prevGpRegs[i], after: this.gpRegs[i] });
+            }
+        }
+
+        const diff: CpuStateDiff = {
+            pc: prevPc,
+            inst,
+            decoded,
+            changedRegs,
+            memoryWrites: this.memoryWrites.map(w => ({ ...w })), // shallow copy
+            repeatCount: 1
+        };
+
+        let canMerge = false;
+        if (this.history.length > 0) {
+            const last = this.history[this.history.length - 1];
+            if (!last.isLoopStart && !last.isLoopEnd) {
+                canMerge = this.canMerge(last, diff);
+                if (canMerge) {
+                    last.repeatCount = (last.repeatCount || 1) + 1;
+                }
+            }
+        }
+
+        if (!canMerge) {
+            this.history.push(diff);
+
+            if (this.history.length >= CPU_MAX_HISTORY) {
+                this.compressOldestLoop();
+                if (this.history.length >= CPU_MAX_HISTORY) {
+                    this.history.shift();
+                }
+            }
+        }
+    }
+
+    private canMerge(prev: CpuStateDiff, current: CpuStateDiff): boolean {
+        if (prev.inst !== current.inst) {
+            return false;
+        }
+
+        if (prev.pc + (WORD_LEN / BYTE_LEN) !== current.pc) {
+            return false;
+        }
+
+        if (prev.changedRegs.size !== current.changedRegs.size) {
+            return false;
+        }
+
+        for (const [reg, change] of current.changedRegs) {
+            const prevChange = prev.changedRegs.get(reg);
+            if (!prevChange) {
+                return false;
+            }
+
+            if (prevChange.after !== change.before) {
+                return false;
+            }
+        }
+
+        if (prev.memoryWrites.length !== current.memoryWrites.length) {
+            return false;
+        }
+
+        for (let i = 0; i < current.memoryWrites.length; i++) {
+            const prevWrite = prev.memoryWrites[i];
+            const currWrite = current.memoryWrites[i];
+
+            if (prevWrite.addr !== currWrite.addr) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private detectLoop(): void {
+        const trace = this.executionTrace;
+        if (trace.length < 4) return;
+
+        const lastPc = trace[trace.length - 1];
+        const positions: number[] = [];
+
+        for (let i = trace.length - 2; i >= Math.max(0, trace.length - 100); i--) {
+            if (trace[i] === lastPc) {
+                positions.push(i);
+            }
+        }
+
+        if (positions.length === 0) return;
+
+        const loopLength = trace.length - 1 - positions[0];
+        if (loopLength < 2 || loopLength > 50) return;
+
+        let isLoop = true;
+        for (let i = 0; i < loopLength && isLoop; i++) {
+            const pos1 = trace.length - 1 - i;
+            const pos2 = positions[0] - i;
+            if (pos2 < 0 || trace[pos1] !== trace[pos2]) {
+                isLoop = false;
+            }
+        }
+
+        if (!isLoop) return;
+
+        let repeatCount = 1;
+        for (let i = 1; i < positions.length; i++) {
+            const expectedPos = positions[0] - loopLength * i;
+            if (positions[i] === expectedPos) {
+                repeatCount++;
+            } else {
+                break;
+            }
+        }
+
+        if (repeatCount >= 3) {
+            const startPc = trace[positions[repeatCount - 1]];
+            const endPc = lastPc;
+
+            if (this.lastCompressedLoopId >= 0) {
+                const lastLoop = this.detectedLoops.get(this.lastCompressedLoopId);
+                if (lastLoop && lastLoop.startPc === startPc && lastLoop.endPc === endPc) {
+                    return;
+                }
+            }
+
+            const instructions: number[] = [];
+            for (let i = 0; i < loopLength; i++) {
+                const pcIdx = trace.length - loopLength + i;
+                if (pcIdx >= 0 && pcIdx < trace.length) {
+                    instructions.push(trace[pcIdx]);
+                }
+            }
+
+            const loopId = this.currentLoopId++;
+            const loopPattern: LoopPattern = {
+                startPc,
+                endPc,
+                instructions,
+                repeatCount,
+                firstDiffIndex: this.history.length - loopLength * repeatCount
+            };
+
+            this.detectedLoops.set(loopId, loopPattern);
+            this.compressLoopInHistory(loopPattern, loopId);
+            this.lastCompressedLoopId = loopId;
+        }
+    } private compressLoopInHistory(loop: LoopPattern, loopId: number): void {
+        const loopLength = loop.instructions.length;
+        const totalEntries = loopLength * loop.repeatCount;
+        const startIdx = Math.max(0, this.history.length - totalEntries);
+
+        if (startIdx >= this.history.length || totalEntries > this.history.length) return;
+
+        const loopEntries = this.history.splice(startIdx, totalEntries);
+
+        if (loopEntries.length >= loopLength) {
+            const oneCycle = loopEntries.slice(0, loopLength);
+
+            if (oneCycle.length > 0) {
+                oneCycle[0].isLoopStart = true;
+                oneCycle[0].loopId = loopId;
+                oneCycle[0].repeatCount = loop.repeatCount;
+
+                oneCycle[oneCycle.length - 1].isLoopEnd = true;
+                oneCycle[oneCycle.length - 1].loopId = loopId;
+            }
+
+            this.history.push(...oneCycle);
+        } else {
+            this.history.push(...loopEntries);
+        }
+    }
+
+    private compressOldestLoop(): void {
+        if (this.history.length < 10) return;
+
+        for (let loopLen = 2; loopLen <= Math.min(10, Math.floor(this.history.length / 3)); loopLen++) {
+            let repeatCount = 0;
+
+            for (let offset = 0; offset + loopLen <= this.history.length; offset += loopLen) {
+                const cycleMatch = this.historyCyclesMatch(offset, offset + loopLen, loopLen);
+                if (cycleMatch) {
+                    repeatCount++;
+                } else {
+                    break;
+                }
+            }
+
+            if (repeatCount >= 3) {
+                const oneCycle = this.history.splice(0, loopLen);
+                if (oneCycle.length > 0) {
+                    oneCycle[0].isLoopStart = true;
+                    oneCycle[0].loopId = this.currentLoopId;
+                    oneCycle[0].repeatCount = repeatCount;
+                    oneCycle[oneCycle.length - 1].isLoopEnd = true;
+                    oneCycle[oneCycle.length - 1].loopId = this.currentLoopId;
+
+                    for (let i = 1; i < repeatCount; i++) {
+                        this.history.splice(0, loopLen);
+                    }
+
+                    this.history.unshift(...oneCycle);
+                    this.currentLoopId++;
+                }
+                return;
+            }
+        }
+    }
+
+    private historyCyclesMatch(start1: number, start2: number, length: number): boolean {
+        if (start2 + length > this.history.length) return false;
+
+        for (let i = 0; i < length; i++) {
+            const entry1 = this.history[start1 + i];
+            const entry2 = this.history[start2 + i];
+
+            if (entry1.pc !== entry2.pc || entry1.inst !== entry2.inst) {
+                return false;
+            }
+
+            if (entry1.decoded.opcode !== entry2.decoded.opcode) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    getLoopStatistics(): Array<{ loopId: number; startPc: number; endPc: number; length: number; repeatCount: number }> {
+        const stats: Array<{ loopId: number; startPc: number; endPc: number; length: number; repeatCount: number }> = [];
+        this.detectedLoops.forEach((loop, loopId) => {
+            stats.push({
+                loopId,
+                startPc: loop.startPc,
+                endPc: loop.endPc,
+                length: loop.instructions.length,
+                repeatCount: loop.repeatCount
+            });
+        });
+        return stats;
+    }
+
+    getTotalExecutedInstructions(): number {
+        let total = 0;
+        for (const diff of this.history) {
+            total += (diff.repeatCount || 1);
+        }
+        return total;
+    }
+
+    clearHistory(): void {
+        this.history = [];
+        this.executionTrace = [];
+        this.detectedLoops.clear();
+        this.currentLoopId = 0;
+        this.lastCompressedLoopId = -1;
     }
 }

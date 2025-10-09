@@ -113,7 +113,7 @@ export function Timeline({ tweets }: Readonly<{ tweets: TweetData[] }>) {
                     bgcolor: "background.paper",
                 }}
             >
-                <Typography variant="h5" fontWeight="bold">ホーム</Typography>
+                <Typography variant="h5" fontWeight="bold">タイムライン</Typography>
             </Box>
             <Box sx={{ overflow: "auto", height: "calc(100vh - 80px)" }}>
                 <Stack spacing={0}>

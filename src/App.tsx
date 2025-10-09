@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { Cpu } from "./cpu";
 import * as Llm from "./llm";
 
-const TIMER_INTERVAL_SEC = 30; // 30s
+const TIMER_INTERVAL_SEC = 60; // 60s
 
 export default function App() {
     const cpuRef = useRef<Cpu | null>(null);
@@ -32,17 +32,14 @@ export default function App() {
             }
 
             const cpu = cpuRef.current;
-            let cpuStateText = "";
-            if (cpu) {
-                const regsText = cpu.gpRegs.map((v, i) => {
-                    const hexValue = v.toString(16).padStart(4, "0");
-                    return `r${i}=0x${hexValue}`;
-                }).join(", ");
-                const pcHex = cpu.pc.toString(16).padStart(4, "0");
-                cpuStateText = `\n\n現在のCPU状態:\nPC: 0x${pcHex}\nレジスタ: ${regsText}`;
-            }
+            if (!cpu)
+                return;
 
-            Llm.generateTextAsync(cpuStateText).then((text) => {
+            const cpuHistory = cpu.history;
+            console.log(cpuHistory);
+            const json = JSON.stringify(cpuHistory);
+
+            Llm.generateTextAsync(json).then((text) => {
                 const newTweet: TweetData = {
                     user: { name: Llm.getModelName(), username: "ai_bot" },
                     content: text,

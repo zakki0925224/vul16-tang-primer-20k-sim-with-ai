@@ -3,7 +3,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 type Model = "gemini" | "local";
-const USING_MODEL: Model = "gemini";
+const USING_MODEL: Model = "local";
 
 const googleProvider = createGoogleGenerativeAI({
     apiKey: import.meta.env.VITE_GEMINI_API_KEY,
