@@ -1,7 +1,8 @@
 import { Box, Button, Chip, Container, FormControlLabel, FormGroup, Grid, Paper, Slider, Stack, Switch, Typography } from "@mui/material";
-import { useEffect, useRef, useState, type DragEvent, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type RefObject } from "react";
 import { Cpu, type InstructionDecoded } from "./cpu";
 import type { BufferInner } from "./textLcd";
+import gameBinUrl from "../game.bin?url";
 
 interface SimulatorProps {
     cpuRef: RefObject<Cpu | null>;
@@ -38,6 +39,37 @@ export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>)
     }
 
     const cloneLcdBuffer = (buf: BufferInner[][]) => buf.map(row => row.map(cell => ({ ...cell })));
+
+    const resetCpuState = useCallback((clearMemory: boolean = false) => {
+        const cpu = cpuRef.current;
+        if (!cpu) return;
+
+        if (clearMemory) {
+            cpu.memory.fill(0);
+        }
+        cpu.memory[0xf002] = buttonsToByte(buttonsRef.current);
+        cpu.clearHistory();
+        cpu.pc = 0;
+        cpu.gpRegs = Array(8).fill(0);
+
+        setRegs([...cpu.gpRegs]);
+        setChangedRegs([]);
+        setPc(cpu.pc);
+        setDecoded(null);
+        setLastInst(null);
+        setLcdBuf(cpu.textLcd ? cloneLcdBuffer(cpu.textLcd.buffer) : null);
+    }, [cpuRef, buttonsRef]);
+
+    // Load binary data into memory and reset CPU
+    const loadBinaryToMemory = useCallback((data: Uint8Array, fileName: string) => {
+        const cpu = cpuRef.current;
+        if (!cpu) return;
+
+        cpu.memory.fill(0);
+        cpu.memory.set(data, 0);
+        resetCpuState(false);
+        setLoadedFile({ name: fileName, size: data.length });
+    }, [cpuRef, resetCpuState]);
 
     const stepOnce = () => {
         const cpu = cpuRef.current;
@@ -102,19 +134,7 @@ export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>)
         reader.onload = () => {
             const buf = reader.result as ArrayBuffer;
             const arr = new Uint8Array(buf);
-            const cpu = cpuRef.current;
-            if (!cpu) return;
-            cpu.memory.fill(0);
-            cpu.memory.set(arr, 0);
-            cpu.memory[0xf002] = buttonsToByte(buttonsRef.current);
-            cpu.clearHistory();
-            cpu.pc = 0;
-            setRegs([...cpu.gpRegs]);
-            setPc(cpu.pc);
-            setDecoded(null);
-            setLastInst(null);
-            setLcdBuf(cpu.textLcd ? cloneLcdBuffer(cpu.textLcd.buffer) : null);
-            setLoadedFile({ name: f.name, size: arr.length });
+            loadBinaryToMemory(arr, f.name);
         };
         reader.readAsArrayBuffer(f);
     }
@@ -127,27 +147,29 @@ export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>)
         setRunning(false);
     }
 
-    const reset = () => {
+    const loadGameBin = useCallback(async () => {
+        try {
+            const response = await fetch(gameBinUrl);
+            if (!response.ok) {
+                console.error(`Failed to load game.bin: ${response.statusText}`);
+                return;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const arr = new Uint8Array(arrayBuffer);
+            loadBinaryToMemory(arr, "game.bin");
+            console.log(`Loaded game.bin (${arr.length} bytes)`);
+        } catch (error) {
+            console.error("Error loading game.bin:", error);
+        }
+    }, [loadBinaryToMemory]);
+
+    const reset = async () => {
         if (intervalRef.current) {
             clearInterval(intervalRef.current);
             intervalRef.current = null;
         }
         setRunning(false);
-
-        if (cpuRef.current) {
-            cpuRef.current.gpRegs = Array(8).fill(0);
-            cpuRef.current.pc = 0;
-            cpuRef.current.memory.fill(0);
-            cpuRef.current.memory[0xf002] = buttonsToByte(buttonsRef.current);
-            cpuRef.current.clearHistory();
-            setRegs([...cpuRef.current.gpRegs]);
-            setChangedRegs([]);
-            setPc(cpuRef.current.pc);
-            setDecoded(null);
-            setLastInst(null);
-            setLcdBuf(cpuRef.current.textLcd ? cloneLcdBuffer(cpuRef.current.textLcd.buffer) : null);
-        }
-        setLoadedFile(null);
+        await loadGameBin();
     }
 
     useEffect(() => { buttonsRef.current = buttons; }, [buttons]);
@@ -157,12 +179,14 @@ export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>)
     }, [running, onRunningChange]);
 
     useEffect(() => {
-        const cpu = cpuRef.current;
-        if (cpu) {
-            setRegs([...cpu.gpRegs]);
-            setPc(cpu.pc);
-            setLcdBuf(cloneLcdBuffer(cpu.textLcd.buffer));
-        }
+        const initializeCpu = async () => {
+            const cpu = cpuRef.current;
+            if (cpu) {
+                await loadGameBin();
+            }
+        };
+
+        initializeCpu();
 
         return () => {
             if (intervalRef.current) {
@@ -170,7 +194,7 @@ export function Simulator({ cpuRef, onRunningChange }: Readonly<SimulatorProps>)
             }
             intervalRef.current = null;
         }
-    }, [cpuRef]);
+    }, [cpuRef, loadGameBin]);
 
     // keep refs in sync with state
     useEffect(() => { runningRef.current = running; }, [running]);
