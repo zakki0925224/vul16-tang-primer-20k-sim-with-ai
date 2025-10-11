@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { Box, Stack, Typography, IconButton, Avatar } from "@mui/material";
+import { Box, Stack, Typography, IconButton, Avatar, Accordion, AccordionSummary, AccordionDetails } from "@mui/material";
 import {
     ChatBubbleOutline as MessageCircleIcon,
     Repeat as RepeatIcon,
     FavoriteBorder as HeartIcon,
-    Share as ShareIcon
+    Share as ShareIcon,
+    ExpandMore
 } from "@mui/icons-material";
 
 export interface User {
@@ -16,6 +17,7 @@ export interface User {
 export interface TweetData {
     user: User;
     content: string;
+    detail: string;
     timestamp: Date;
 }
 
@@ -37,7 +39,7 @@ function formatRelativeTime(date: Date): string {
     }
 }
 
-function Tweet({ user, content, timestamp }: Readonly<TweetData>) {
+function Tweet({ user, content, detail, timestamp }: Readonly<TweetData>) {
     const [relativeTime, setRelativeTime] = useState(formatRelativeTime(timestamp));
 
     useEffect(() => {
@@ -60,6 +62,7 @@ function Tweet({ user, content, timestamp }: Readonly<TweetData>) {
                 borderBottom: "1px solid",
                 borderColor: "divider",
                 p: 2,
+                boxSizing: "border-box",
             }}
         >
             <Stack direction="row" spacing={1.5} alignItems="flex-start">
@@ -71,7 +74,7 @@ function Tweet({ user, content, timestamp }: Readonly<TweetData>) {
                         <Typography color="text.secondary">·</Typography>
                         <Typography color="text.secondary">{relativeTime}</Typography>
                     </Stack>
-                    <Typography>{content}</Typography>
+                    <Typography sx={{ wordBreak: "break-word", overflowWrap: "break-word" }}>{content}</Typography>
                 </Stack>
             </Stack>
             <Stack direction="row" spacing={0} pt={1} width="100%" justifyContent="space-around">
@@ -88,6 +91,45 @@ function Tweet({ user, content, timestamp }: Readonly<TweetData>) {
                     <ShareIcon fontSize="small" />
                 </IconButton>
             </Stack>
+            <Accordion
+                elevation={0}
+                disableGutters
+                sx={{
+                    '&:before': {
+                        display: 'none',
+                    },
+                    backgroundColor: 'transparent',
+                }}
+            >
+                <AccordionSummary
+                    expandIcon={<ExpandMore />}
+                    sx={{
+                        minHeight: 'auto',
+                        padding: 0,
+                        paddingTop: 1,
+                        '& .MuiAccordionSummary-content': {
+                            margin: 0,
+                        },
+                    }}
+                >
+                    <Typography variant="body2" color="text.secondary">詳細を表示</Typography>
+                </AccordionSummary>
+                <AccordionDetails sx={{ padding: 1, paddingTop: 0 }}>
+                    <Box sx={{
+                        backgroundColor: 'action.hover',
+                        borderRadius: 1,
+                        p: 1.5
+                    }}>
+                        <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                        >
+                            {detail}
+                        </Typography>
+                    </Box>
+                </AccordionDetails>
+            </Accordion>
         </Box>
     )
 }
@@ -96,10 +138,11 @@ export function Timeline({ tweets }: Readonly<{ tweets: TweetData[] }>) {
     return (
         <Box
             sx={{
-                flex: 1,
-                borderRight: "1px solid",
-                borderColor: "divider",
+                width: "100%",
                 height: "100vh",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
             }}
         >
             <Box
@@ -107,15 +150,12 @@ export function Timeline({ tweets }: Readonly<{ tweets: TweetData[] }>) {
                     p: 2,
                     borderBottom: "1px solid",
                     borderColor: "divider",
-                    position: "sticky",
-                    top: 0,
-                    zIndex: 1,
                     bgcolor: "background.paper",
                 }}
             >
                 <Typography variant="h5" fontWeight="bold">タイムライン</Typography>
             </Box>
-            <Box sx={{ overflow: "auto", height: "calc(100vh - 80px)" }}>
+            <Box sx={{ overflowY: "auto", overflowX: "hidden", flex: 1 }}>
                 <Stack spacing={0}>
                     {tweets.map((tweet) => (
                         <Tweet key={`${tweet.user.username}-${tweet.timestamp.getTime()}`} {...tweet} />

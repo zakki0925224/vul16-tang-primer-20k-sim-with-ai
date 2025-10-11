@@ -36,13 +36,18 @@ export default function App() {
                 return;
 
             const cpuHistory = cpu.history;
-            console.log(cpuHistory);
             const json = JSON.stringify(cpuHistory);
 
-            Llm.generateTextAsync(json).then((text) => {
+            const start = performance.now();
+            Llm.generateTextAsync(json).then(([text, prompt]) => {
+                const end = performance.now();
+                const elapsed = ((end - start) / 1000).toFixed(2);
+                const detail = `Thinking: ${elapsed}s\n\nPrompt:\n${prompt}`;
+
                 const newTweet: TweetData = {
                     user: { name: Llm.getModelName(), username: "ai_bot" },
                     content: text,
+                    detail,
                     timestamp: new Date()
                 };
                 addTweet(newTweet);
@@ -62,7 +67,8 @@ export default function App() {
             <Box sx={{
                 width: "25%",
                 minWidth: "300px",
-                overflow: "auto",
+                maxWidth: "500px",
+                overflow: "hidden",
                 borderLeft: 1,
                 borderColor: "divider"
             }}>

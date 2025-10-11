@@ -18,7 +18,7 @@ export function getModelName(): string {
     return USING_MODEL === "gemini" ? import.meta.env.VITE_GEMINI_MODEL : import.meta.env.VITE_LOCAL_MODEL;
 }
 
-export async function generateTextAsync(prompt: string): Promise<string> {
+export async function generateTextAsync(prompt: string): Promise<[string, string]> {
     const customInstructions = import.meta.env.VITE_CUSTOM_INSTRUCTIONS;
     const promptWithCustomInstructions = `${customInstructions}\n\n${prompt}`;
 
@@ -29,5 +29,5 @@ export async function generateTextAsync(prompt: string): Promise<string> {
         model: provider(modelName),
         prompt: promptWithCustomInstructions,
     })
-    return text;
+    return [text, promptWithCustomInstructions];
 };
