@@ -3,7 +3,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 type Model = "gemini" | "local";
-const USING_MODEL: Model = "local";
+const USING_MODEL: Model = "gemini";
 
 const googleProvider = createGoogleGenerativeAI({
     apiKey: import.meta.env.VITE_GEMINI_API_KEY,
@@ -18,8 +18,7 @@ export function getModelName(): string {
     return USING_MODEL === "gemini" ? import.meta.env.VITE_GEMINI_MODEL : import.meta.env.VITE_LOCAL_MODEL;
 }
 
-export async function generateTextAsync(prompt: string): Promise<[string, string]> {
-    const customInstructions = import.meta.env.VITE_CUSTOM_INSTRUCTIONS;
+export async function generateTextAsync(customInstructions: string, prompt: string): Promise<[string, string]> {
     const promptWithCustomInstructions = `${customInstructions}\n\n${prompt}`;
 
     const provider = USING_MODEL === "gemini" ? googleProvider : localProvider;

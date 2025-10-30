@@ -144,6 +144,7 @@ export class Cpu {
     textLcd: TextLcd = new TextLcd();
 
     history: CpuStateDiff[] = [];
+    archivedHistory: CpuStateDiff[] = [];
     private executionTrace: number[] = [];
     private readonly maxTraceLength: number = 1000;
     private readonly detectedLoops: Map<number, LoopPattern> = new Map();
@@ -539,7 +540,10 @@ export class Cpu {
             if (this.history.length >= CPU_MAX_HISTORY) {
                 this.compressOldestLoop();
                 if (this.history.length >= CPU_MAX_HISTORY) {
-                    this.history.shift();
+                    const removed = this.history.shift();
+                    if (removed) {
+                        this.archivedHistory.push(removed);
+                    }
                 }
             }
         }
@@ -664,6 +668,7 @@ export class Cpu {
         if (startIdx >= this.history.length || totalEntries > this.history.length) return;
 
         const loopEntries = this.history.splice(startIdx, totalEntries);
+        this.archivedHistory.push(...loopEntries);
 
         if (loopEntries.length >= loopLength) {
             const oneCycle = loopEntries.slice(0, loopLength);
@@ -700,6 +705,7 @@ export class Cpu {
 
             if (repeatCount >= 3) {
                 const oneCycle = this.history.splice(0, loopLen);
+                this.archivedHistory.push(...oneCycle);
                 if (oneCycle.length > 0) {
                     oneCycle[0].isLoopStart = true;
                     oneCycle[0].loopId = this.currentLoopId;
@@ -708,7 +714,10 @@ export class Cpu {
                     oneCycle[oneCycle.length - 1].loopId = this.currentLoopId;
 
                     for (let i = 1; i < repeatCount; i++) {
-                        this.history.splice(0, loopLen);
+                        const removed = this.history.splice(0, loopLen);
+                        if (removed.length > 0) {
+                            this.archivedHistory.push(...removed);
+                        }
                     }
 
                     this.history.unshift(...oneCycle);
@@ -762,6 +771,7 @@ export class Cpu {
 
     clearHistory(): void {
         this.history = [];
+        this.archivedHistory = [];
         this.executionTrace = [];
         this.detectedLoops.clear();
         this.currentLoopId = 0;
