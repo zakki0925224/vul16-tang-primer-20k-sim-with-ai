@@ -135,6 +135,10 @@ function Tweet({ user, content, detail, timestamp }: Readonly<TweetData>) {
 }
 
 export function Timeline({ tweets }: Readonly<{ tweets: TweetData[] }>) {
+    useEffect(() => {
+        console.log('[Timeline] Received tweets:', tweets.length);
+    }, [tweets]);
+
     return (
         <Box
             sx={{
