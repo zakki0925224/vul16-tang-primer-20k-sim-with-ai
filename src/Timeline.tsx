@@ -4,8 +4,8 @@ import {
     ChatBubbleOutline as MessageCircleIcon,
     Repeat as RepeatIcon,
     FavoriteBorder as HeartIcon,
-    Share as ShareIcon,
-    ExpandMore
+    ExpandMore,
+    ContentCopy as ContentCopyIcon
 } from "@mui/icons-material";
 
 export interface User {
@@ -41,6 +41,7 @@ function formatRelativeTime(date: Date): string {
 
 function Tweet({ user, content, detail, timestamp }: Readonly<TweetData>) {
     const [relativeTime, setRelativeTime] = useState(formatRelativeTime(timestamp));
+    const [copySuccess, setCopySuccess] = useState(false);
 
     useEffect(() => {
         const updateRelativeTime = () => {
@@ -53,6 +54,17 @@ function Tweet({ user, content, detail, timestamp }: Readonly<TweetData>) {
 
         return () => clearInterval(interval);
     }, [timestamp]);
+
+    const handleCopy = async () => {
+        try {
+            const object = { user, content, detail, timestamp };
+            await navigator.clipboard.writeText(JSON.stringify(object));
+            setCopySuccess(true);
+            setTimeout(() => setCopySuccess(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    };
 
     return (
         <Box
@@ -87,10 +99,24 @@ function Tweet({ user, content, detail, timestamp }: Readonly<TweetData>) {
                 <IconButton size="small">
                     <HeartIcon fontSize="small" />
                 </IconButton>
-                <IconButton size="small">
-                    <ShareIcon fontSize="small" />
+                <IconButton
+                    size="small"
+                    onClick={handleCopy}
+                    title="コピー"
+                    sx={{
+                        color: copySuccess ? 'success.main' : 'inherit',
+                    }}
+                >
+                    <ContentCopyIcon fontSize="small" />
                 </IconButton>
             </Stack>
+            {copySuccess && (
+                <Box sx={{ textAlign: 'center', pt: 1 }}>
+                    <Typography variant="caption" color="success.main">
+                        コピーしました！
+                    </Typography>
+                </Box>
+            )}
             <Accordion
                 elevation={0}
                 disableGutters
