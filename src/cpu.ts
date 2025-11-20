@@ -145,6 +145,7 @@ export class Cpu {
 
     history: CpuStateDiff[] = [];
     archivedHistory: CpuStateDiff[] = [];
+    private accumulatedInstructions: number = 0;
     private executionTrace: number[] = [];
     private readonly maxTraceLength: number = 1000;
     private readonly detectedLoops: Map<number, LoopPattern> = new Map();
@@ -762,16 +763,29 @@ export class Cpu {
     }
 
     getTotalExecutedInstructions(): number {
-        let total = 0;
+        let total = this.accumulatedInstructions;
+        for (const diff of this.archivedHistory) {
+            total += (diff.repeatCount || 1);
+        }
         for (const diff of this.history) {
             total += (diff.repeatCount || 1);
         }
         return total;
     }
 
+    flushArchivedHistory(): CpuStateDiff[] {
+        const history = this.archivedHistory;
+        for (const diff of history) {
+            this.accumulatedInstructions += (diff.repeatCount || 1);
+        }
+        this.archivedHistory = [];
+        return history;
+    }
+
     clearHistory(): void {
         this.history = [];
         this.archivedHistory = [];
+        this.accumulatedInstructions = 0;
         this.executionTrace = [];
         this.detectedLoops.clear();
         this.currentLoopId = 0;
