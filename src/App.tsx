@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Cpu } from "./cpu";
 
 const TIMER_INTERVAL_SEC = 0.1;
-const ENGI_API_URL = "http://localhost:8203/log/";
+const ENGI_API_URL = "/log/";
 
 export default function App() {
     const cpuRef = useRef<Cpu | null>(null);
@@ -22,17 +22,15 @@ export default function App() {
 
     useEffect(() => {
         const sendLog = async () => {
-            if (!isCpuRunning)
-                return;
+            if (!isCpuRunning) return;
 
             try {
                 const cpu = cpuRef.current;
-                if (!cpu)
-                    return;
+                if (!cpu) return;
 
                 const cpuHistory = cpu.getHistory();
                 console.log(cpuHistory);
-                const history = cpuHistory.map(diff => {
+                const history = cpuHistory.map((diff) => {
                     let result = `pc: 0x${diff.pc.toString(16)}, ${diff.disass}`;
 
                     if (diff.changedRegs.keys.length > 0) {
@@ -48,21 +46,24 @@ export default function App() {
                     }
 
                     return result;
-                })
+                });
 
                 await fetch(ENGI_API_URL, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                     },
-                    body: JSON.stringify({ content: JSON.stringify(history) })
+                    body: JSON.stringify({ content: JSON.stringify(history) }),
                 });
             } catch (error) {
                 console.error("Error sending log:", error);
             }
         };
 
-        const logTimer = setInterval(() => void sendLog(), TIMER_INTERVAL_SEC * 1000);
+        const logTimer = setInterval(
+            () => void sendLog(),
+            TIMER_INTERVAL_SEC * 1000,
+        );
 
         return () => {
             clearInterval(logTimer);
@@ -73,5 +74,5 @@ export default function App() {
         <Box sx={{ display: "flex", height: "100vh", width: "100%" }}>
             <Simulator cpuRef={cpuRef} onRunningChange={handleRunningChange} />
         </Box>
-    )
+    );
 }
